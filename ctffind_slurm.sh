@@ -11,7 +11,7 @@
 # Print the exact command into the output file for debugging and to log the exact RELION version
 
 module purge
-module load {relion_module}
+module load {ctffind_module}
 
 echo "------------------------------------------------------------------------------------"
 
