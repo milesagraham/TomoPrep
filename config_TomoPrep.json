@@ -1,0 +1,54 @@
+{
+
+  "processing_directory": "/path/to/output/directory",
+  "mdoc_directory": "/path/to/directory/with/mdocs_and_frames",
+  "modify_subframe_path": "YES",
+
+  "file_sorting": "YES",
+  "motion_correction": "YES",
+  "ctf_estimation": "YES",
+  "aretomo_alignment": "YES",
+  "relion_tomo_import": "YES",
+  "relion_tomogram_reconstruction": "YES",
+
+  "relion_module": "RELION/4.0.1",
+  "imod_module": "imod",
+  "aretomo_module": "ARETOMO/1.3.4",
+
+  "file_type": "mrc",
+  "pixel_size": 1.34,
+  "voltage": 300,
+  "Cs": 2.7,
+  "Q0": 0.1,
+  "frame_dose": 0.5,
+  "gainref": "/path/to/gainref.mrc",
+
+  "MOTIONCORR_SLURM_TEMPLATE": "motioncorr_slurm.sh",
+  "ARETOMO_SLURM_TEMPLATE": "aretomo_slurm.sh",
+  "CTFFIND_SLURM_TEMPLATE": "ctffind_slurm.sh",
+  "IMPORT_SLURM_TEMPLATE": "import_slurm.sh",
+  "TOMO_RECONSTRUCT_SLURM_TEMPLATE": "tomo_reconstruct_slurm.sh",
+
+  "partition": "gpu_short,gpu_long,gpu_long_zhang",
+  "MPIs": 5,
+  "threads": 4,
+  "max_jobs": 1000,
+
+  "motioncorr_patches": 1,
+  "eer_grouping": 40,
+
+  "lowest_defocus_search": 1,
+  "highest_defocus_search": 5,
+  "min_ctf_fit_resolution": 40,
+  "max_ctf_fit_resolution": 5,
+
+  "aretomo_volume_binning": 6,
+  "aretomo_thickness": 1800,
+  "aretomo_AliZ": 300,
+  "aretomo_DarkTol": 0.7,
+
+  "tomo_reconstruct_binning": 4,
+  "tomo_reconstruct_threads": 8
+
+}
+
