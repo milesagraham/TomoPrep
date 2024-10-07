@@ -437,7 +437,7 @@ def ctffind(mdoc_file, processing_directory):
     CTFFIND_SLURM_TEMPLATE = config['CTFFIND_SLURM_TEMPLATE']
     pixel_size = config['pixel_size']
     partition = config['partition']
-    relion_module = config['relion_module']
+    ctffind_module = config['ctffind_module']
     Cs = config['Cs']
     Q0 = config['Q0']
     lowest_defocus_search = config['lowest_defocus_search']
@@ -454,7 +454,7 @@ def ctffind(mdoc_file, processing_directory):
     # Read the template file
     with open(CTFFIND_SLURM_TEMPLATE, "r") as f:
         slurm_template = f.read()
-        slurm_script = slurm_template.format(processing_directory=processing_directory, relion_module=relion_module,
+        slurm_script = slurm_template.format(processing_directory=processing_directory, ctffind_module=ctffind_module,
                                              partition=partition, position_directory=position_directory,
                                              position_prefix=position_prefix, Cs=Cs, Q0=Q0,
                                              max_ctf_fit_resolution=max_ctf_fit_resolution,
