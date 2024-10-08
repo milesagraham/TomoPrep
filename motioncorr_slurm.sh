@@ -7,7 +7,7 @@
 #SBATCH --open-mode=append
 #SBATCH --partition={partition}
 #SBATCH --mem-per-cpu=7G
-#SBATCH --exclusive
+##SBATCH --exclusive #sometimes solves a bug with imod on the strubi cluster. Turned off by default.
 
 # Print the exact command into the output file for debugging and to log the
 # exact RELION version
