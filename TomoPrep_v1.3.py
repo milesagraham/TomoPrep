@@ -916,8 +916,10 @@ if __name__ == '__main__':
         p.join()
 
     if relion_tomo_import == "YES":
-        relion_setup(mdoc_absolute_path, processing_directory)
-        relion_import_star_maker(mdoc_absolute_path, processing_directory)
+        for mdoc_file in mdoc_files:
+            mdoc_absolute_path = os.path.join(mdoc_directory, mdoc_file)
+            relion_setup(mdoc_absolute_path, processing_directory)
+            relion_import_star_maker(mdoc_absolute_path, processing_directory)
         relion_import()
 
     if relion_tomogram_reconstruction == "YES":
