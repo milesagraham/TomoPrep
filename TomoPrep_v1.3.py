@@ -605,15 +605,14 @@ def relion_setup(mdoc_file, processing_directory):
     xtilt_file = f"{source_imod_directory}/{position_prefix}.xtilt"
     source_path = source_imod_directory
     message_printed = False
-    while not os.path.exists(source_path) and not os.path.exists(tiltcom_file) and not os.path.exists(
-        tlt_file) and not os.path.exists(newstcom_file) and not os.path.exists(xtilt_file) and not os.path.exists(
-        xf_file) and not os.path.exists(st_file):
+    while not os.path.exists(source_path) and os.path.exists(tiltcom_file) and os.path.exists(
+        tlt_file) and os.path.exists(newstcom_file) and os.path.exists(xtilt_file) and os.path.exists(
+        xf_file) and os.path.exists(st_file):
         if not message_printed:
             print_colored(
                 f"{position_prefix} : RELION is waiting for IMOD files from AreTomo...",
                 Color.YELLOW)
             message_printed = True
-        time.sleep(2)
 
     for file in os.listdir(source_imod_directory):
         source_path = os.path.join(source_imod_directory, file)
