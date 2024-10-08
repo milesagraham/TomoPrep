@@ -567,7 +567,7 @@ def relion_setup(mdoc_file, processing_directory):
                 f"{position_prefix} : RELION is waiting for the unaligned stack...",
                 Color.YELLOW)
             message_printed = True
-        time.sleep(10)  # Wait for 10 seconds before checking again
+            time.sleep(10)  # Wait for 10 seconds before checking again
 
     link_path = os.path.join(relion_position_directory, unaligned_stack)
     os.symlink(source_path, link_path)
@@ -586,7 +586,7 @@ def relion_setup(mdoc_file, processing_directory):
                 f"{position_prefix} : RELION is waiting for CTF files...",
                 Color.YELLOW)
             message_printed = True
-        time.sleep(10)  # Wait for 10 seconds before checking again
+            time.sleep(10)  # Wait for 10 seconds before checking again
 
     link_path = os.path.join(relion_position_directory, ctf_list)
     os.symlink(source_path, link_path)
@@ -604,10 +604,9 @@ def relion_setup(mdoc_file, processing_directory):
                 f"{position_prefix} : RELION is waiting for IMOD files from AreTomo...",
                 Color.YELLOW)
             message_printed = True
-        time.sleep(10)
+            time.sleep(10)
 
     for file in os.listdir(source_imod_directory):
-        time.sleep(10)
         source_path = os.path.join(source_imod_directory, file)
         link_path = os.path.join(relion_position_directory, file)
         os.symlink(source_path, link_path)
@@ -627,7 +626,7 @@ def relion_setup(mdoc_file, processing_directory):
                 f"{position_prefix} : RELION is waiting for the Tomo Order List...",
                 Color.YELLOW)
             message_printed = True
-        time.sleep(10)  # Wait for 10 seconds before checking again
+            time.sleep(10)  # Wait for 10 seconds before checking again
 
     os.symlink(source_path, link_path)
     print_colored(f'{position_prefix} : {order_list} has been soft linked to the RELION processing directory.',
