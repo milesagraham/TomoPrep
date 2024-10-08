@@ -1,5 +1,5 @@
 """
-Version Date : 8th January, 2024
+Version Date : 8th October, 2024
 Author : Miles Graham
 Institution : University of Oxford / Diamond Light Source
 Description: This script has a list of functions which are called in the execution script in order to enact tomography
@@ -596,9 +596,10 @@ def relion_setup(mdoc_file, processing_directory):
     # soft link in 'imod' files
 
     source_imod_directory = f"{processing_directory}/{position_prefix}/{position_prefix}_Imod"
+    tiltcom_file = f"{source_imod_directory}/tilt.com"
     source_path = source_imod_directory
     message_printed = False
-    while not os.path.exists(source_path):
+    while not os.path.exists(source_path) and not os.path.exists(tiltcom_file):
         if not message_printed:
             print_colored(
                 f"{position_prefix} : RELION is waiting for IMOD files from AreTomo...",
