@@ -597,9 +597,10 @@ def relion_setup(mdoc_file, processing_directory):
 
     source_imod_directory = f"{processing_directory}/{position_prefix}/{position_prefix}_Imod"
     tiltcom_file = f"{source_imod_directory}/tilt.com"
+    tlt_file = f"{source_imod_directory}/{position_prefix}.tlt"
     source_path = source_imod_directory
     message_printed = False
-    while not os.path.exists(source_path) and not os.path.exists(tiltcom_file):
+    while not os.path.exists(source_path) and not os.path.exists(tiltcom_file) and not os.path.exists(tlt_file):
         if not message_printed:
             print_colored(
                 f"{position_prefix} : RELION is waiting for IMOD files from AreTomo...",
