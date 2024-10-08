@@ -154,14 +154,15 @@ def file_sorter(mdoc_file, processing_directory, mdoc_directory):
         # You may want to log the error or take other appropriate actions
         return None, None
 
+
 '''
 rawtlt_maker makes the basic rawtlt files required for AreTomo tilt series alignment to describe the tilt scheme used.
 This currently does not include any dose information for dose weighting and could potentially be added in future 
 versions. 
 '''
 
-def rawtlt_maker(mdoc_file,):
 
+def rawtlt_maker(mdoc_file, ):
     try:
         # Generate mdoc DataFrame and use it to define the target prefix and folder path
         mdoc_df = readmdoc(mdoc_file)
@@ -567,7 +568,7 @@ def relion_setup(mdoc_file, processing_directory):
                 f"{position_prefix} : RELION is waiting for the unaligned stack...",
                 Color.YELLOW)
             message_printed = True
-            time.sleep(10)  # Wait for 10 seconds before checking again
+        time.sleep(2)  # Wait for 10 seconds before checking again
 
     link_path = os.path.join(relion_position_directory, unaligned_stack)
     os.symlink(source_path, link_path)
@@ -586,7 +587,7 @@ def relion_setup(mdoc_file, processing_directory):
                 f"{position_prefix} : RELION is waiting for CTF files...",
                 Color.YELLOW)
             message_printed = True
-            time.sleep(10)  # Wait for 10 seconds before checking again
+        time.sleep(2)  # Wait for 10 seconds before checking again
 
     link_path = os.path.join(relion_position_directory, ctf_list)
     os.symlink(source_path, link_path)
@@ -597,16 +598,22 @@ def relion_setup(mdoc_file, processing_directory):
 
     source_imod_directory = f"{processing_directory}/{position_prefix}/{position_prefix}_Imod"
     tiltcom_file = f"{source_imod_directory}/tilt.com"
+    newstcom_file = f"{source_imod_directory}/newst.com"
     tlt_file = f"{source_imod_directory}/{position_prefix}.tlt"
+    st_file = f"{source_imod_directory}/{position_prefix}.st"
+    xf_file = f"{source_imod_directory}/{position_prefix}.xf"
+    xtilt_file = f"{source_imod_directory}/{position_prefix}.xtilt"
     source_path = source_imod_directory
     message_printed = False
-    while not os.path.exists(source_path) and not os.path.exists(tiltcom_file) and not os.path.exists(tlt_file):
+    while not os.path.exists(source_path) and not os.path.exists(tiltcom_file) and not os.path.exists(
+        tlt_file) and not os.path.exists(newstcom_file) and not os.path.exists(xtilt_file) and not os.path.exists(
+        xf_file) and not os.path.exists(st_file):
         if not message_printed:
             print_colored(
                 f"{position_prefix} : RELION is waiting for IMOD files from AreTomo...",
                 Color.YELLOW)
             message_printed = True
-            time.sleep(10)
+        time.sleep(2)
 
     for file in os.listdir(source_imod_directory):
         source_path = os.path.join(source_imod_directory, file)
@@ -628,7 +635,7 @@ def relion_setup(mdoc_file, processing_directory):
                 f"{position_prefix} : RELION is waiting for the Tomo Order List...",
                 Color.YELLOW)
             message_printed = True
-            time.sleep(10)  # Wait for 10 seconds before checking again
+        time.sleep(2)  # Wait for 10 seconds before checking again
 
     os.symlink(source_path, link_path)
     print_colored(f'{position_prefix} : {order_list} has been soft linked to the RELION processing directory.',
@@ -668,7 +675,7 @@ def relion_setup(mdoc_file, processing_directory):
     pattern = r'EXCLUDELIST\s+(.*?)$'
     content = re.sub(pattern, process_numbers, content, flags=re.MULTILINE)
 
-    #remove existing tilt file
+    # remove existing tilt file
     if os.path.exists(modified_tilt_file):
         os.remove(modified_tilt_file)
 
@@ -866,7 +873,6 @@ def process_mdoc_file(mdoc_file):
         aretomo_alignment = config["aretomo_alignment"]
         relion_tomo_import = config['relion_tomo_import']
 
-
         if file_sorting == "YES":
             # Call functions with error handling
             result = file_sorter(mdoc_absolute_path, processing_directory, mdoc_directory)
@@ -880,7 +886,7 @@ def process_mdoc_file(mdoc_file):
         if motion_correction == "YES":
             motioncorr(mdoc_absolute_path, processing_directory)
         if aretomo_alignment == "YES":
-           aretomo(mdoc_absolute_path, processing_directory)
+            aretomo(mdoc_absolute_path, processing_directory)
         if ctf_estimation == "YES":
             ctffind(mdoc_absolute_path, processing_directory)
     except Exception as e:
