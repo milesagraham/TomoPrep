@@ -882,9 +882,6 @@ def process_mdoc_file(mdoc_file):
            aretomo(mdoc_absolute_path, processing_directory)
         if ctf_estimation == "YES":
             ctffind(mdoc_absolute_path, processing_directory)
-        if relion_tomo_import == "YES":
-            relion_setup(mdoc_absolute_path, processing_directory)
-            relion_import_star_maker(mdoc_absolute_path, processing_directory)
     except Exception as e:
         print(f"An error occurred during processing: {e}")
 
@@ -919,6 +916,8 @@ if __name__ == '__main__':
         p.join()
 
     if relion_tomo_import == "YES":
+        relion_setup(mdoc_absolute_path, processing_directory)
+        relion_import_star_maker(mdoc_absolute_path, processing_directory)
         relion_import()
 
     if relion_tomogram_reconstruction == "YES":
