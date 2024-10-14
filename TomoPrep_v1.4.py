@@ -21,6 +21,7 @@ from functions import Color
 from functions import print_colored
 from functions import parse_config
 from functions import get_position_name
+from functions import queue_submit
 
 
 
@@ -117,29 +118,9 @@ to modify a template submission script with the desired parameters for RELION's 
 '''
 
 
-def motioncorr(mdoc_file, processing_directory):
-    # extract relevant information from mdoc
-    mdoc_df = readmdoc(mdoc_file)
-    position_name = mdoc_df.loc[1, "ImageFile"]
+def motioncorr(mdoc_file, config):
 
-    # Read the configuration file
-    with open('config_TomoPrep.json', 'r') as f:
-        config_data = f.read()
-
-    # Parse the contents of the JSON file
-    config = json.loads(config_data)
-    file_type = config['file_type']
-
-    # Remove the file extension from position name in order to get position prefix and its relevant processing directory.
-    position_prefix = position_name.replace(".{}".format(file_type), "")
-    position_directory = os.path.join(processing_directory, position_prefix)
-
-    # Read the configuration file
-    with open('config_TomoPrep.json', 'r') as f:
-        config_data = f.read()
-
-    # Parse the contents of the JSON file
-    config = json.loads(config_data)
+    position_prefix, position_directory = get_position_name(mdoc_file, config)
 
     # Extract the parameters required for the motion correction and newstack.
 
@@ -176,27 +157,8 @@ def motioncorr(mdoc_file, processing_directory):
         with open(slurm_script_path, "w") as f:
             f.write(slurm_script)
 
-        message_printed = False
-        while True:
-            # Run the squeue command to get the job count for the current user
-            squeue_command = "squeue -u $(whoami) | wc -l"
-            job_count = int(subprocess.check_output(squeue_command, shell=True).decode().strip())
-
-            if job_count >= max_jobs:
-                if not message_printed:
-                    print_colored(
-                        f"{position_prefix} : Maximum number of SLURM jobs running ({job_count}). Waiting for the queue to go down...",
-                        Color.YELLOW)
-                    message_printed = True
-                sleep_time = random.randint(1, 10)
-                time.sleep(sleep_time)
-            else:
-                # Submit a new job using sbatch
-                subprocess.run(['sbatch', slurm_script_path])
-                print_colored(f"{position_prefix} : Motion Correction job submitted.",
-                              Color.RED)
-                break  # Exit the loop after submitting a job
-
+        job_name = "Motion Correction"
+        queue_submit(position_prefix, job_name, slurm_script_path, config)
 
 '''
 aretomo feeds the parameters obtained from the readmdoc function and the configuration file (user input), in order 
@@ -749,7 +711,7 @@ def process_mdoc_file(mdoc_file):
             newstacker(mdoc_absolute_path, config)
             tomo_order_list_maker(mdoc_absolute_path, processing_directory)
         if motion_correction == "YES":
-            motioncorr(mdoc_absolute_path, processing_directory)
+            motioncorr(mdoc_absolute_path, config)
         if aretomo_alignment == "YES":
             aretomo(mdoc_absolute_path, processing_directory)
         if ctf_estimation == "YES":

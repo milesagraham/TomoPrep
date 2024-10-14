@@ -108,3 +108,27 @@ def get_position_name(mdoc_file, config):
     position_prefix = position_name.replace(".{}".format(file_type), "")
     position_directory = os.path.join(processing_directory, position_prefix)
     return position_prefix, position_directory
+
+def queue_submit(position_prefix, job_name, slurm_script_path, config):
+
+    max_jobs = config['max_jobs']
+    message_printed = False
+    while True:
+        # Run the squeue command to get the job count for the current user
+        squeue_command = "squeue -u $(whoami) | wc -l"
+        job_count = int(subprocess.check_output(squeue_command, shell=True).decode().strip())
+
+        if job_count >= max_jobs:
+            if not message_printed:
+                print_colored(
+                    f"{position_prefix} : Maximum number of SLURM jobs running ({job_count}). Waiting for the queue to go down...",
+                    Color.YELLOW)
+                message_printed = True
+            sleep_time = random.randint(1, 10)
+            time.sleep(sleep_time)
+        else:
+            # Submit a new job using sbatch
+            subprocess.run(['sbatch', slurm_script_path])
+            print_colored(f"{position_prefix} : {job_name} job submitted.",
+                          Color.RED)
+            break  # Exit the loop after submitting a job
