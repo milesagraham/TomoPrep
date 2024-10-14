@@ -138,7 +138,6 @@ def motioncorr(mdoc_file, config):
     motioncorr_patches = config['motioncorr_patches']
     eer_grouping = config['eer_grouping']
     gainref = config['gainref']
-    max_jobs = config['max_jobs']
     voltage = config['voltage']
 
     # Read the template file
@@ -166,20 +165,9 @@ to modify a template submission script with the desired parameters for AreTomo (
 '''
 
 
-def aretomo(mdoc_file, processing_directory):
-    # read the mdoc being processed and extract name of position (with file extension)
-    mdoc_df = readmdoc(mdoc_file)
-    position_name = mdoc_df.loc[1, "ImageFile"]
+def aretomo(mdoc_file, config):
 
-    # Read the configuration file
-    with open('config_TomoPrep.json', 'r') as f:
-        config_data = f.read()
-    config = json.loads(config_data)
-
-    # Remove the file extension from position name in order to get position prefix and its relevant processing directory.
-    file_type = config['file_type']
-    position_prefix = position_name.replace(".{}".format(file_type), "")
-    position_directory = os.path.join(processing_directory, position_prefix)
+    position_prefix, position_directory = get_position_name(mdoc_file, config)
 
     # extract the remaining relevant parameters required for the AreTomo job.
     ARETOMO_SLURM_TEMPLATE = config['ARETOMO_SLURM_TEMPLATE']
@@ -191,7 +179,6 @@ def aretomo(mdoc_file, processing_directory):
     aretomo_DarkTol = config['aretomo_DarkTol']
     aretomo_AliZ = config['aretomo_AliZ']
     aretomo_module = config['aretomo_module']
-    max_jobs = config['max_jobs']
 
     # Read the template submission script file
     with open(ARETOMO_SLURM_TEMPLATE, "r") as f:
@@ -212,37 +199,19 @@ def aretomo(mdoc_file, processing_directory):
         # pause until inputs are ready
         exit_success = f'{position_directory}/MotionCorr/job002/RELION_JOB_EXIT_SUCCESS'
         message_printed = False
-        while not os.path.exists(exit_success):
+        job_name = "AreTomo"
 
+        while not os.path.exists(exit_success):
             if not message_printed:
                 print_colored(
-                    f"{position_prefix} : AreTomo is waiting for motion corrected movies...",
+                    f"{position_prefix} : {job_name} is waiting for motion corrected movies...",
                     Color.YELLOW)
                 message_printed = True
 
         # pause to make sure stack has been made before submitting
         time.sleep(60)
 
-        message_printed = False
-        while True:
-            # Run the squeue command to get the job count for the current user
-            squeue_command = "squeue -u $(whoami) | wc -l"
-            job_count = int(subprocess.check_output(squeue_command, shell=True).decode().strip())
-
-            if job_count >= max_jobs:
-                if not message_printed:
-                    print_colored(
-                        f"{position_prefix} : Maximum number of SLURM jobs running ({job_count}). Waiting for the queue to go down...",
-                        Color.YELLOW)
-                    message_printed = True
-                sleep_time = random.randint(1, 10)
-                time.sleep(sleep_time)
-            else:
-                # Submit a new job using sbatch
-                subprocess.run(['sbatch', slurm_script_path])
-                print_colored(f"{position_prefix} : AreTomo job submitted.",
-                              Color.RED)
-                break  # Exit the loop after submitting a job
+        queue_submit(position_prefix, job_name, slurm_script_path, config)
 
 
 '''
@@ -251,20 +220,10 @@ to modify a template submission script with the desired parameters for CtfFind4,
 '''
 
 
-def ctffind(mdoc_file, processing_directory):
-    # extract relevant information from mdoc
-    mdoc_df = readmdoc(mdoc_file)
-    position_name = mdoc_df.loc[1, "ImageFile"]
+def ctffind(mdoc_file, config):
 
-    # Read the configuration file
-    with open('config_TomoPrep.json', 'r') as f:
-        config_data = f.read()
-    config = json.loads(config_data)
-
-    # Remove the file extension from position name in order to get position prefix and its relevant processing directory.
-    file_type = config['file_type']
-    position_prefix = position_name.replace(".{}".format(file_type), "")
-    position_directory = os.path.join(processing_directory, position_prefix)
+    job_name = "CtfFind"
+    position_prefix, position_directory = get_position_name(mdoc_file, config)
 
     # extract the remaining relevant parameters required for the Ctffind job.
     CTFFIND_SLURM_TEMPLATE = config['CTFFIND_SLURM_TEMPLATE']
@@ -275,7 +234,6 @@ def ctffind(mdoc_file, processing_directory):
     Q0 = config['Q0']
     lowest_defocus_search = config['lowest_defocus_search']
     highest_defocus_search = config['highest_defocus_search']
-    max_jobs = config['max_jobs']
     voltage = config['voltage']
     max_ctf_fit_resolution = config['max_ctf_fit_resolution']
     min_ctf_fit_resolution = config['min_ctf_fit_resolution']
@@ -301,41 +259,20 @@ def ctffind(mdoc_file, processing_directory):
         with open(slurm_script_path, "w") as f:
             f.write(slurm_script)
 
-        # pause until inputs are ready
-
         exit_success = f'{position_directory}/MotionCorr/job002/RELION_JOB_EXIT_SUCCESS'
         message_printed = False
         while not os.path.exists(exit_success):
             if not message_printed:
                 print_colored(
-                    f"{position_prefix} : CtfFind is waiting for motion corrected movies...",
+                    f"{position_prefix} : {job_name} is waiting for motion corrected movies...",
                     Color.YELLOW)
                 message_printed = True
-            time.sleep(10)  # Wait for 10 seconds before checking again
+            time.sleep(10)
 
         # pause to make sure stack has been made before submitting
         time.sleep(60)
 
-        message_printed = False
-        while True:
-            # Run the squeue command to get the job count for the current user
-            squeue_command = "squeue -u $(whoami) | wc -l"
-            job_count = int(subprocess.check_output(squeue_command, shell=True).decode().strip())
-
-            if job_count >= max_jobs:
-                if not message_printed:
-                    print_colored(
-                        f"{position_prefix} : Maximum number of SLURM jobs running ({job_count}). Waiting for the queue to go down...",
-                        Color.YELLOW)
-                    message_printed = True
-                sleep_time = random.randint(1, 10)
-                time.sleep(sleep_time)
-            else:
-                # Submit a new job using sbatch
-                subprocess.run(['sbatch', slurm_script_path])
-                print_colored(f"{position_prefix} : CtfFind job submitted.",
-                              Color.RED)
-                break  # Exit the loop after submitting a job
+        queue_submit(position_prefix, job_name, slurm_script_path, config)
 
 
 def tomo_order_list_maker(mdoc_file, processing_directory):
@@ -713,9 +650,9 @@ def process_mdoc_file(mdoc_file):
         if motion_correction == "YES":
             motioncorr(mdoc_absolute_path, config)
         if aretomo_alignment == "YES":
-            aretomo(mdoc_absolute_path, processing_directory)
+            aretomo(mdoc_absolute_path, config)
         if ctf_estimation == "YES":
-            ctffind(mdoc_absolute_path, processing_directory)
+            ctffind(mdoc_absolute_path, config)
     except Exception as e:
         print(f"An error occurred during processing: {e}")
 
