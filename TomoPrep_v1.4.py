@@ -21,6 +21,7 @@ from functions import print_colored
 from functions import get_position_name
 from functions import queue_submit
 from functions import modify_tltfile
+from functions import parse_config
 
 
 '''
@@ -449,7 +450,6 @@ def relion_import_star_maker(mdoc_file, config):
 
 def relion_import(config):
 
-    position_prefix, position_directory = get_position_name(mdoc_file, config)
     relion_module = config['relion_module']
     processing_directory = config['processing_directory']
     RELION_IMPORT_TEMPLATE = config['IMPORT_SLURM_TEMPLATE']
@@ -474,7 +474,7 @@ def relion_import(config):
             f.write(slurm_script)
 
         job_name = "RELION Import"
-        queue_submit(position_prefix, job_name, slurm_script_path, config)
+        queue_submit("Full Dataset", job_name, slurm_script_path, config)
 
 
 def relion_tomo_reconstruct(mdoc_file, config):
