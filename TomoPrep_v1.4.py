@@ -7,7 +7,6 @@ preprocessing steps (soft linking relevant files, motion correcting movies, ctf 
 aligning tilt series) and then writing out the star files and soft linking the required files for relion import.
 """
 
-import re
 import os
 import pandas as pd
 import json
@@ -267,6 +266,7 @@ def ctffind(mdoc_file, config):
                     Color.YELLOW)
                 message_printed = True
 
+        time.sleep(60) #to ensure newstack has finished running
         queue_submit(position_prefix, job_name, slurm_script_path, config)
 
 
