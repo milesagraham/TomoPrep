@@ -535,7 +535,6 @@ def process_mdoc_file(mdoc_file):
         motion_correction = config["motion_correction"]
         ctf_estimation = config["ctf_estimation"]
         aretomo_alignment = config["aretomo_alignment"]
-        relion_tomo_import = config['relion_tomo_import']
 
         if file_sorting == "YES":
             # Call functions with error handling
