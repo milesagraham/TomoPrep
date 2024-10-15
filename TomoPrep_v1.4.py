@@ -1,5 +1,5 @@
 """
-Version Date : 14th October, 2024
+Version Date : 15th October, 2024
 Author : Miles Graham
 Institution : University of Oxford / Diamond Light Source
 Description: This script has a list of functions which are called in the execution script in order to enact tomography
@@ -19,10 +19,9 @@ import random
 from functions import readmdoc
 from functions import Color
 from functions import print_colored
-from functions import parse_config
 from functions import get_position_name
 from functions import queue_submit
-
+from functions import modify_tltfile
 
 
 '''
@@ -267,28 +266,15 @@ def ctffind(mdoc_file, config):
                     f"{position_prefix} : {job_name} is waiting for motion corrected movies...",
                     Color.YELLOW)
                 message_printed = True
-            time.sleep(10)
-
-        # pause to make sure stack has been made before submitting
-        time.sleep(60)
 
         queue_submit(position_prefix, job_name, slurm_script_path, config)
 
 
-def tomo_order_list_maker(mdoc_file, processing_directory):
+def tomo_order_list_maker(mdoc_file, config):
     # extract relevant information from mdoc
     mdoc_df = readmdoc(mdoc_file)
-    position_name = mdoc_df.loc[1, "ImageFile"]
+    position_prefix, position_directory = get_position_name(mdoc_file, config)
 
-    # Read the configuration file
-    with open('config_TomoPrep.json', 'r') as f:
-        config_data = f.read()
-    config = json.loads(config_data)
-
-    # Remove the file extension from position name in order to get position prefix and its relevant processing directory.
-    file_type = config['file_type']
-    position_prefix = position_name.replace(".{}".format(file_type), "")
-    position_directory = os.path.join(processing_directory, position_prefix)
     # stating the name/location of the csv file to be generated
     order_list_path = f"{position_prefix}_order_list.csv"
     order_list_path = os.path.join(position_directory, order_list_path)
@@ -303,20 +289,9 @@ def tomo_order_list_maker(mdoc_file, processing_directory):
     order_list_df.to_csv(order_list_path, index=False, header=False)
 
 
-def relion_setup(mdoc_file, processing_directory):
-    # extract relevant information from mdoc
-    mdoc_df = readmdoc(mdoc_file)
-    position_name = mdoc_df.loc[1, "ImageFile"]
+def relion_setup(mdoc_file, config):
 
-    # Read the configuration file
-    with open('config_TomoPrep.json', 'r') as f:
-        config_data = f.read()
-    config = json.loads(config_data)
-
-    # Remove the file extension from position name in order to get position prefix and its relevant processing directory.
-    file_type = config['file_type']
-    position_prefix = position_name.replace(".{}".format(file_type), "")
-    position_directory = os.path.join(processing_directory, position_prefix)
+    position_prefix, position_directory = get_position_name(mdoc_file, config)
 
     # Make the RELION_PROCESSING directory and the position directories within the tomograms folder
     relion_processing_path = os.path.join(processing_directory, "RELION_PROCESSING")
@@ -337,7 +312,6 @@ def relion_setup(mdoc_file, processing_directory):
                 f"{position_prefix} : RELION is waiting for the unaligned stack...",
                 Color.YELLOW)
             message_printed = True
-        time.sleep(2)  # Wait for 10 seconds before checking again
 
     link_path = os.path.join(relion_position_directory, unaligned_stack)
     os.symlink(source_path, link_path)
@@ -356,7 +330,7 @@ def relion_setup(mdoc_file, processing_directory):
                 f"{position_prefix} : RELION is waiting for CTF files...",
                 Color.YELLOW)
             message_printed = True
-        time.sleep(2)  # Wait for 10 seconds before checking again
+
 
     link_path = os.path.join(relion_position_directory, ctf_list)
     os.symlink(source_path, link_path)
@@ -374,9 +348,9 @@ def relion_setup(mdoc_file, processing_directory):
     xtilt_file = f"{source_imod_directory}/{position_prefix}.xtilt"
     source_path = source_imod_directory
     message_printed = False
-    while not os.path.exists(source_path) and os.path.exists(tiltcom_file) and os.path.exists(
-        tlt_file) and os.path.exists(newstcom_file) and os.path.exists(xtilt_file) and os.path.exists(
-        xf_file) and os.path.exists(st_file):
+    while not os.path.exists(source_path) or not os.path.exists(tiltcom_file) or not os.path.exists(
+        tlt_file) or not os.path.exists(newstcom_file) or not os.path.exists(xtilt_file) or not os.path.exists(
+        xf_file) or not os.path.exists(st_file):
         if not message_printed:
             print_colored(
                 f"{position_prefix} : RELION is waiting for IMOD files from AreTomo...",
@@ -403,52 +377,15 @@ def relion_setup(mdoc_file, processing_directory):
                 f"{position_prefix} : RELION is waiting for the Tomo Order List...",
                 Color.YELLOW)
             message_printed = True
-        time.sleep(2)  # Wait for 10 seconds before checking again
 
     os.symlink(source_path, link_path)
     print_colored(f'{position_prefix} : {order_list} has been soft linked to the RELION processing directory.',
                   Color.GREEN)
 
-    # remove the extra line at the bottom of the .tlt file generated by AreTomo (ugh!)
-    # dan says that the xf file also has a blank line - maybe worth looking at
     tlt_file_path = os.path.join(relion_position_directory, f"{position_prefix}.tlt")
-    # Read the contents of the file
-    with open(tlt_file_path, 'r') as file:
-        lines = file.readlines()
+    tiltcom_file = os.path.join(relion_position_directory, "tilt.com")
 
-    # Remove the trailing whitespace (including the extra blank line) if it exists
-    lines = [line.rstrip() for line in lines]
-
-    # Write the modified content back to the file
-    with open(tlt_file_path, 'w') as file:
-        file.write('\n'.join(lines))
-
-    # modify the EXCLUDE list in the tilt.com file to match the RELION naming scheme.
-
-    def increment_number(number):
-        return str(int(number) + 1)
-
-    def process_numbers(match):
-        numbers = match.group(1).replace(',', ' ').split()
-        incremented_numbers = ','.join(increment_number(num) for num in numbers)
-        return f'EXCLUDELIST {incremented_numbers}'
-
-    imod_directory = f"{processing_directory}/{position_prefix}/{position_prefix}_Imod"
-    tilt_file = f"{imod_directory}/tilt.com"
-    modified_tilt_file = f"{relion_position_directory}/tilt.com"
-
-    with open(tilt_file, 'r') as file:
-        content = file.read()
-
-    pattern = r'EXCLUDELIST\s+(.*?)$'
-    content = re.sub(pattern, process_numbers, content, flags=re.MULTILINE)
-
-    # remove existing tilt file
-    if os.path.exists(modified_tilt_file):
-        os.remove(modified_tilt_file)
-
-    with open(modified_tilt_file, 'w') as file:
-        file.write(content)
+    modify_tltfile(tlt_file_path, tiltcom_file)
 
 
 class RelionStarFile:
@@ -598,7 +535,7 @@ def relion_tomo_reconstruct(mdoc_file):
                     f"{position_prefix} : Waiting for import to finish...",
                     Color.YELLOW)
                 message_printed = True
-            time.sleep(10)  # Wait for 10 seconds before checking again
+
 
         print(f"{position_prefix} : Import finished. Requesting tomogram reconstruction in RELION")
 
@@ -646,7 +583,7 @@ def process_mdoc_file(mdoc_file):
             file_sorter(mdoc_absolute_path, config)
             rawtlt_maker(mdoc_absolute_path, config)
             newstacker(mdoc_absolute_path, config)
-            tomo_order_list_maker(mdoc_absolute_path, processing_directory)
+            tomo_order_list_maker(mdoc_absolute_path, config)
         if motion_correction == "YES":
             motioncorr(mdoc_absolute_path, config)
         if aretomo_alignment == "YES":
@@ -689,7 +626,7 @@ if __name__ == '__main__':
     if relion_tomo_import == "YES":
         for mdoc_file in mdoc_files:
             mdoc_absolute_path = os.path.join(mdoc_directory, mdoc_file)
-            relion_setup(mdoc_absolute_path, processing_directory)
+            relion_setup(mdoc_absolute_path, config)
             relion_import_star_maker(mdoc_absolute_path, processing_directory)
         relion_import()
 

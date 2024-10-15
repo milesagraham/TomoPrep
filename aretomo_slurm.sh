@@ -27,7 +27,7 @@ echo "--------------------------------------------------------------------------
 
 #Below are the commands to be executed. Modify the AreTomo command as needed.
 
-AreTomo -InMrc {position_directory}/{position_prefix}_unaligned.mrc -OutMrc {position_directory}/{position_prefix}.mrc -VolZ {aretomo_thickness} -OutBin {aretomo_volume_binning} -TiltCor 1 -AngFile {position_directory}/{position_prefix}.rawtlt -DarkTol {aretomo_DarkTol} -AlignZ {aretomo_AliZ}  -OutImod 3 -FlipVol 1
+AreTomo -InMrc {position_directory}/{position_prefix}_unaligned.mrc -OutMrc {position_directory}/{position_prefix}_volume.mrc -VolZ {aretomo_thickness} -OutBin {aretomo_volume_binning} -TiltCor 1 -AngFile {position_directory}/{position_prefix}.rawtlt -DarkTol {aretomo_DarkTol} -AlignZ {aretomo_AliZ}  -OutImod 2 -FlipVol 1
 AreTomo -InMrc {position_directory}/{position_prefix}_unaligned.mrc -OutMrc {position_directory}/{position_prefix}_aligned_stack.mrc -OutBin 4 -VolZ 0 -AlnFile {position_directory}/{position_prefix}.aln
 
 

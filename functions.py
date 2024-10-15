@@ -132,3 +132,45 @@ def queue_submit(position_prefix, job_name, slurm_script_path, config):
             print_colored(f"{position_prefix} : {job_name} job submitted.",
                           Color.RED)
             break  # Exit the loop after submitting a job
+
+
+def modify_tltfile(tlt_file_path, tiltcom):
+
+    message_printed = False
+    while not os.path.exists(tiltcom) or not os.path.exists(
+        tlt_file_path):
+        if not message_printed:
+            print_colored(
+                f"{position_prefix} : Waiting to modify tlt and tilt.com files for RELION compatibility...",
+                Color.YELLOW)
+            message_printed = True
+
+    # Read the contents of the file
+    with open(tlt_file_path, 'r') as file:
+        lines = file.readlines()
+
+    # Remove the trailing whitespace (including the extra blank line) if it exists
+    lines = [line.rstrip() for line in lines]
+
+    # Write the modified content back to the file
+    with open(tlt_file_path, 'w') as file:
+        file.write('\n'.join(lines))
+
+    # modify the EXCLUDE list in the tilt.com file to match the RELION naming scheme.
+
+    def increment_number(number):
+        return str(int(number) + 1)
+
+    def process_numbers(match):
+        numbers = match.group(1).replace(',', ' ').split()
+        incremented_numbers = ','.join(increment_number(num) for num in numbers)
+        return f'EXCLUDELIST {incremented_numbers}'
+
+    with open(tiltcom, 'r') as file:
+        content = file.read()
+
+    pattern = r'EXCLUDELIST\s+(.*?)$'
+    content = re.sub(pattern, process_numbers, content, flags=re.MULTILINE)
+
+    with open(tiltcom, 'w') as file:
+        file.write(content)
