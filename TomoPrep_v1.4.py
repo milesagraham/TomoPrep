@@ -1,5 +1,5 @@
 """
-Version Date : 8th October, 2024
+Version Date : 15th October, 2024
 Author : Miles Graham
 Institution : University of Oxford / Diamond Light Source
 Description: This script has a list of functions which are called in the execution script in order to enact tomography
@@ -16,86 +16,12 @@ import time
 import multiprocessing
 import random
 
-'''
-The readmdoc function extracts information from mdoc files produced by Tomography 5 (TFS) and stores within a pandas 
-dataframe.
-'''
-
-
-# ANSI escape codes for colors
-class Color:
-    RED = '\033[91m'
-    GREEN = '\033[92m'
-    YELLOW = '\033[93m'
-    RESET = '\033[0m'
-
-
-def print_colored(message, color):
-    print(f"{color}{message}{Color.RESET}")
-
-
-def readmdoc(mdoc_file):
-    # Read the mdoc file
-    with open(mdoc_file, "r") as file:
-        mdoc_content = file.read()
-
-    # Extract the Voltage value from the header
-    voltage_match = re.search(r"Voltage = (\d+\.\d+)", mdoc_content)
-    if voltage_match:
-        voltage = float(voltage_match.group(1))
-    else:
-        voltage = None
-
-    # Extract the TiltAxisAngle value from the header
-    tilt_axis_angle_match = re.search(r"TiltAxisAngle = ([-+]?\d+\.\d+)", mdoc_content)
-    if tilt_axis_angle_match:
-        tilt_axis_angle = float(tilt_axis_angle_match.group(1))
-    else:
-        tilt_axis_angle = None
-
-    # Extract the ImageFile value from the header and remove the mrc extension
-    image_file_match = re.search(r"ImageFile = (.+)", mdoc_content)
-    if image_file_match:
-        image_file = image_file_match.group(1).strip()
-        image_file = image_file.replace(".mrc", "")
-    else:
-        image_file = None
-
-    # Split the mdoc content into Z groups
-    z_groups_raw = re.split(r"\[ZValue = (-?\d+)]", mdoc_content)
-    z_groups = z_groups_raw[1:]  # Skip the first empty element
-
-    # Extract the data for each Z group
-    data = []
-    for i in range(0, len(z_groups), 2):
-        z_data = z_groups[i + 1]
-        tilt_angle = re.search(r"TiltAngle = ([-+]?\d+\.\d+)", z_data).group(1)
-        subframe_path = re.search(r"SubFramePath = (.+)", z_data).group(1).strip()
-        subframe_path = re.search(r"[^\\/:*?\"<>|\r\n]+$", subframe_path).group()
-        number_of_frames = re.search(r"NumSubFrames = (\d+)", z_data).group(1)
-
-        # Read the configuration file
-        with open('config_TomoPrep.json', 'r') as f:
-            config_data = f.read()
-        # Parse the contents of the JSON file
-        config = json.loads(config_data)
-        modify_subframe_path = config['modify_subframe_path']
-
-        # Check if modification is needed
-        if modify_subframe_path == "YES":
-            # Replace "Fractions.mrc" with "fractions.mrc" in subframe_path
-            subframe_path = subframe_path.replace("_Fractions.", "_fractions.")
-
-        data.append((float(tilt_angle), subframe_path, float(number_of_frames)))
-
-    # Create a pandas DataFrame
-    mdoc_df = pd.DataFrame(data, columns=["TiltAngle", "SubFramePath", "NumSubFrames"])
-
-    # Add the header information to each DataFrame entry
-    mdoc_df["Voltage"] = voltage
-    mdoc_df["TiltAxisAngle"] = tilt_axis_angle
-    mdoc_df['ImageFile'] = image_file
-    return mdoc_df
+from functions import readmdoc
+from functions import Color
+from functions import print_colored
+from functions import get_position_name
+from functions import queue_submit
+from functions import modify_tltfile
 
 
 '''
@@ -104,55 +30,31 @@ with the position name. E.g. If processing a position labelled "Position_1_3", a
 the tilt movies relating to this position will be soft linked within this directory. 
 '''
 
+def file_sorter(mdoc_file, config):
 
-def file_sorter(mdoc_file, processing_directory, mdoc_directory):
-    try:
-        # Generate mdoc DataFrame and use it to define the target prefix and folder path
-        mdoc_df = readmdoc(mdoc_file)
+    get_position_name(mdoc_file, config)
+    position_prefix, position_directory = get_position_name(mdoc_file, config)
+    mdoc_df = readmdoc(mdoc_file)
+    mdoc_directory = config.get('mdoc_directory')
 
-        if mdoc_df is None or mdoc_df.empty:
-            raise ValueError("The mdoc DataFrame is empty or None.")
+    # Create a directory for this position in the processing directory if it doesn't exist
+    os.makedirs(position_directory, exist_ok=True)
+    # Create symbolic links to the files listd in SubFramePath column in the newly made folder
+    linked_files_count = 0  # Counter for linked files
+    for _, row in mdoc_df.iterrows():
+        subframe_path = row["SubFramePath"]
+        if not pd.isnull(subframe_path):
+            subframe_file = os.path.basename(subframe_path)
+            source_path = os.path.join(mdoc_directory, subframe_file)
+            link_path = os.path.join(position_directory, subframe_file)
+            os.symlink(source_path, link_path)
+            linked_files_count += 1
 
-        position_name = mdoc_df.loc[1, "ImageFile"]
 
-        # Read the configuration file
-        with open('config_TomoPrep.json', 'r') as f:
-            config_data = f.read()
-
-        # Parse the contents of the JSON file
-        config = json.loads(config_data)
-        file_type = config.get('file_type')
-
-        if not file_type:
-            raise ValueError("File type not specified in the configuration.")
-
-        # extract the position name and directory
-        position_prefix = position_name.replace(".{}".format(file_type), "")
-        position_directory = os.path.join(processing_directory, position_prefix)
-
-        # Create a directory for this position in the processing directory if it doesn't exist
-        os.makedirs(position_directory, exist_ok=True)
-
-        # Create symbolic links to the files listed in SubFramePath column in the newly made folder
-        linked_files_count = 0  # Counter for linked files
-        for _, row in mdoc_df.iterrows():
-            subframe_path = row["SubFramePath"]
-            if not pd.isnull(subframe_path):
-                subframe_file = os.path.basename(subframe_path)
-                source_path = os.path.join(mdoc_directory, subframe_file)
-                link_path = os.path.join(position_directory, subframe_file)
-                os.symlink(source_path, link_path)
-                linked_files_count += 1
-
-        print_colored(f'{position_prefix} : {linked_files_count} relevant files found.',
+    print_colored(f'{position_prefix} : {linked_files_count} relevant files found.',
                       Color.GREEN)
 
-        return position_prefix, position_directory
-
-    except Exception as e:
-        print(f'An error occurred in file_sorter: {e}')
-        # You may want to log the error or take other appropriate actions
-        return None, None
+    return position_prefix, position_directory
 
 
 '''
@@ -162,50 +64,23 @@ versions.
 '''
 
 
-def rawtlt_maker(mdoc_file, ):
-    try:
-        # Generate mdoc DataFrame and use it to define the target prefix and folder path
-        mdoc_df = readmdoc(mdoc_file)
+def rawtlt_maker(mdoc_file, config):
 
-        if mdoc_df is None or mdoc_df.empty:
-            raise ValueError("The mdoc DataFrame is empty or None.")
+    # Generate mdoc DataFrame and use it to define the target prefix and folder path
+    mdoc_df = readmdoc(mdoc_file)
+    position_prefix, position_directory = get_position_name(mdoc_file, config)
 
-        position_name = mdoc_df.loc[1, "ImageFile"]
+    # Sort the DataFrame by the 'TiltAngle' column in ascending order (from most negative to positive)
+    sorted_df = mdoc_df.sort_values(by='TiltAngle')
 
-        # Read the configuration file
-        with open('config_TomoPrep.json', 'r') as f:
-            config_data = f.read()
+    # Extract the 'TiltAngle' and the 'ImageFile' information from the mdoc
+    tilt_angles = sorted_df['TiltAngle']
 
-        # Parse the contents of the JSON file
-        config = json.loads(config_data)
-        file_type = config.get('file_type')
-
-        if not file_type:
-            raise ValueError("File type not specified in the configuration.")
-
-        # extract the position name and directory
-        position_prefix = position_name.replace(".{}".format(file_type), "")
-        position_directory = os.path.join(processing_directory, position_prefix)
-
-        # Sort the DataFrame by the 'TiltAngle' column in ascending order (from most negative to positive)
-        sorted_df = mdoc_df.sort_values(by='TiltAngle')
-
-        # Extract the 'TiltAngle' and the 'ImageFile' information from the mdoc
-        tilt_angles = sorted_df['TiltAngle']
-        if tilt_angles.empty:
-            raise ValueError("No tilt angles found in the mdoc DataFrame.")
-
-        # Create a text file and write the sorted tilt angles to it
-        rawtlt_file = f"{position_directory}/{position_prefix}.rawtlt"
-        with open(rawtlt_file, 'w') as file:
-            file.write(tilt_angles.to_string(index=False))
-        print_colored(f'{position_prefix} : Tilt information written to {rawtlt_file}.', Color.GREEN)
-        return sorted_df
-
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        # You may want to log the error or take other appropriate actions
-        return None
+    # Create a text file and write the sorted tilt angles to it
+    rawtlt_file = f"{position_directory}/{position_prefix}.rawtlt"
+    with open(rawtlt_file, 'w') as file:
+        file.write(tilt_angles.to_string(index=False))
+    print_colored(f'{position_prefix} : Tilt information written to {rawtlt_file}.', Color.GREEN)
 
 
 '''
@@ -213,22 +88,17 @@ Newstacker creates the input file required for Imod's newstack.
 '''
 
 
-def newstacker(mdoc_file, processing_directory):
-    # Read mdoc use it to define the target prefix and folder path
+def newstacker(mdoc_file, config):
+
     mdoc_df = readmdoc(mdoc_file)
     sorted_df = mdoc_df.sort_values(by='TiltAngle')
-    position_name = sorted_df.loc[1, "ImageFile"]
-    # Read the configuration file
-    with open('config_TomoPrep.json', 'r') as f:
-        config_data = f.read()
-    # Parse the contents of the JSON file
-    config = json.loads(config_data)
+    position_prefix, position_directory = get_position_name(mdoc_file, config)
+
     file_type = config['file_type']
-    # defining position prefix and directory in which newstack input will be created.
-    position_prefix = position_name.replace(".{}".format(file_type), "")
-    position_directory = os.path.join(processing_directory, position_prefix)
+
+    # write out newstack input using the dataframe sorted according to tilt angle.
     output_file = f'{position_directory}/{position_prefix}_newstack.txt'
-    # write out newstact input using the dataframe sorted according to tilt angle.
+
     with open(output_file, "w") as file:
         file.write(str(len(sorted_df)) + "\n")
 
@@ -247,29 +117,9 @@ to modify a template submission script with the desired parameters for RELION's 
 '''
 
 
-def motioncorr(mdoc_file, processing_directory):
-    # extract relevant information from mdoc
-    mdoc_df = readmdoc(mdoc_file)
-    position_name = mdoc_df.loc[1, "ImageFile"]
+def motioncorr(mdoc_file, config):
 
-    # Read the configuration file
-    with open('config_TomoPrep.json', 'r') as f:
-        config_data = f.read()
-
-    # Parse the contents of the JSON file
-    config = json.loads(config_data)
-    file_type = config['file_type']
-
-    # Remove the file extension from position name in order to get position prefix and its relevant processing directory.
-    position_prefix = position_name.replace(".{}".format(file_type), "")
-    position_directory = os.path.join(processing_directory, position_prefix)
-
-    # Read the configuration file
-    with open('config_TomoPrep.json', 'r') as f:
-        config_data = f.read()
-
-    # Parse the contents of the JSON file
-    config = json.loads(config_data)
+    position_prefix, position_directory = get_position_name(mdoc_file, config)
 
     # Extract the parameters required for the motion correction and newstack.
 
@@ -287,7 +137,6 @@ def motioncorr(mdoc_file, processing_directory):
     motioncorr_patches = config['motioncorr_patches']
     eer_grouping = config['eer_grouping']
     gainref = config['gainref']
-    max_jobs = config['max_jobs']
     voltage = config['voltage']
 
     # Read the template file
@@ -306,27 +155,8 @@ def motioncorr(mdoc_file, processing_directory):
         with open(slurm_script_path, "w") as f:
             f.write(slurm_script)
 
-        message_printed = False
-        while True:
-            # Run the squeue command to get the job count for the current user
-            squeue_command = "squeue -u $(whoami) | wc -l"
-            job_count = int(subprocess.check_output(squeue_command, shell=True).decode().strip())
-
-            if job_count >= max_jobs:
-                if not message_printed:
-                    print_colored(
-                        f"{position_prefix} : Maximum number of SLURM jobs running ({job_count}). Waiting for the queue to go down...",
-                        Color.YELLOW)
-                    message_printed = True
-                sleep_time = random.randint(1, 10)
-                time.sleep(sleep_time)
-            else:
-                # Submit a new job using sbatch
-                subprocess.run(['sbatch', slurm_script_path])
-                print_colored(f"{position_prefix} : Motion Correction job submitted.",
-                              Color.RED)
-                break  # Exit the loop after submitting a job
-
+        job_name = "Motion Correction"
+        queue_submit(position_prefix, job_name, slurm_script_path, config)
 
 '''
 aretomo feeds the parameters obtained from the readmdoc function and the configuration file (user input), in order 
@@ -334,20 +164,9 @@ to modify a template submission script with the desired parameters for AreTomo (
 '''
 
 
-def aretomo(mdoc_file, processing_directory):
-    # read the mdoc being processed and extract name of position (with file extension)
-    mdoc_df = readmdoc(mdoc_file)
-    position_name = mdoc_df.loc[1, "ImageFile"]
+def aretomo(mdoc_file, config):
 
-    # Read the configuration file
-    with open('config_TomoPrep.json', 'r') as f:
-        config_data = f.read()
-    config = json.loads(config_data)
-
-    # Remove the file extension from position name in order to get position prefix and its relevant processing directory.
-    file_type = config['file_type']
-    position_prefix = position_name.replace(".{}".format(file_type), "")
-    position_directory = os.path.join(processing_directory, position_prefix)
+    position_prefix, position_directory = get_position_name(mdoc_file, config)
 
     # extract the remaining relevant parameters required for the AreTomo job.
     ARETOMO_SLURM_TEMPLATE = config['ARETOMO_SLURM_TEMPLATE']
@@ -359,7 +178,6 @@ def aretomo(mdoc_file, processing_directory):
     aretomo_DarkTol = config['aretomo_DarkTol']
     aretomo_AliZ = config['aretomo_AliZ']
     aretomo_module = config['aretomo_module']
-    max_jobs = config['max_jobs']
 
     # Read the template submission script file
     with open(ARETOMO_SLURM_TEMPLATE, "r") as f:
@@ -380,37 +198,19 @@ def aretomo(mdoc_file, processing_directory):
         # pause until inputs are ready
         exit_success = f'{position_directory}/MotionCorr/job002/RELION_JOB_EXIT_SUCCESS'
         message_printed = False
-        while not os.path.exists(exit_success):
+        job_name = "AreTomo"
 
+        while not os.path.exists(exit_success):
             if not message_printed:
                 print_colored(
-                    f"{position_prefix} : AreTomo is waiting for motion corrected movies...",
+                    f"{position_prefix} : {job_name} is waiting for motion corrected movies...",
                     Color.YELLOW)
                 message_printed = True
 
         # pause to make sure stack has been made before submitting
         time.sleep(60)
 
-        message_printed = False
-        while True:
-            # Run the squeue command to get the job count for the current user
-            squeue_command = "squeue -u $(whoami) | wc -l"
-            job_count = int(subprocess.check_output(squeue_command, shell=True).decode().strip())
-
-            if job_count >= max_jobs:
-                if not message_printed:
-                    print_colored(
-                        f"{position_prefix} : Maximum number of SLURM jobs running ({job_count}). Waiting for the queue to go down...",
-                        Color.YELLOW)
-                    message_printed = True
-                sleep_time = random.randint(1, 10)
-                time.sleep(sleep_time)
-            else:
-                # Submit a new job using sbatch
-                subprocess.run(['sbatch', slurm_script_path])
-                print_colored(f"{position_prefix} : AreTomo job submitted.",
-                              Color.RED)
-                break  # Exit the loop after submitting a job
+        queue_submit(position_prefix, job_name, slurm_script_path, config)
 
 
 '''
@@ -419,20 +219,10 @@ to modify a template submission script with the desired parameters for CtfFind4,
 '''
 
 
-def ctffind(mdoc_file, processing_directory):
-    # extract relevant information from mdoc
-    mdoc_df = readmdoc(mdoc_file)
-    position_name = mdoc_df.loc[1, "ImageFile"]
+def ctffind(mdoc_file, config):
 
-    # Read the configuration file
-    with open('config_TomoPrep.json', 'r') as f:
-        config_data = f.read()
-    config = json.loads(config_data)
-
-    # Remove the file extension from position name in order to get position prefix and its relevant processing directory.
-    file_type = config['file_type']
-    position_prefix = position_name.replace(".{}".format(file_type), "")
-    position_directory = os.path.join(processing_directory, position_prefix)
+    job_name = "CtfFind"
+    position_prefix, position_directory = get_position_name(mdoc_file, config)
 
     # extract the remaining relevant parameters required for the Ctffind job.
     CTFFIND_SLURM_TEMPLATE = config['CTFFIND_SLURM_TEMPLATE']
@@ -443,7 +233,6 @@ def ctffind(mdoc_file, processing_directory):
     Q0 = config['Q0']
     lowest_defocus_search = config['lowest_defocus_search']
     highest_defocus_search = config['highest_defocus_search']
-    max_jobs = config['max_jobs']
     voltage = config['voltage']
     max_ctf_fit_resolution = config['max_ctf_fit_resolution']
     min_ctf_fit_resolution = config['min_ctf_fit_resolution']
@@ -469,57 +258,23 @@ def ctffind(mdoc_file, processing_directory):
         with open(slurm_script_path, "w") as f:
             f.write(slurm_script)
 
-        # pause until inputs are ready
-
         exit_success = f'{position_directory}/MotionCorr/job002/RELION_JOB_EXIT_SUCCESS'
         message_printed = False
         while not os.path.exists(exit_success):
             if not message_printed:
                 print_colored(
-                    f"{position_prefix} : CtfFind is waiting for motion corrected movies...",
+                    f"{position_prefix} : {job_name} is waiting for motion corrected movies...",
                     Color.YELLOW)
                 message_printed = True
-            time.sleep(10)  # Wait for 10 seconds before checking again
 
-        # pause to make sure stack has been made before submitting
-        time.sleep(60)
-
-        message_printed = False
-        while True:
-            # Run the squeue command to get the job count for the current user
-            squeue_command = "squeue -u $(whoami) | wc -l"
-            job_count = int(subprocess.check_output(squeue_command, shell=True).decode().strip())
-
-            if job_count >= max_jobs:
-                if not message_printed:
-                    print_colored(
-                        f"{position_prefix} : Maximum number of SLURM jobs running ({job_count}). Waiting for the queue to go down...",
-                        Color.YELLOW)
-                    message_printed = True
-                sleep_time = random.randint(1, 10)
-                time.sleep(sleep_time)
-            else:
-                # Submit a new job using sbatch
-                subprocess.run(['sbatch', slurm_script_path])
-                print_colored(f"{position_prefix} : CtfFind job submitted.",
-                              Color.RED)
-                break  # Exit the loop after submitting a job
+        queue_submit(position_prefix, job_name, slurm_script_path, config)
 
 
-def tomo_order_list_maker(mdoc_file, processing_directory):
+def tomo_order_list_maker(mdoc_file, config):
     # extract relevant information from mdoc
     mdoc_df = readmdoc(mdoc_file)
-    position_name = mdoc_df.loc[1, "ImageFile"]
+    position_prefix, position_directory = get_position_name(mdoc_file, config)
 
-    # Read the configuration file
-    with open('config_TomoPrep.json', 'r') as f:
-        config_data = f.read()
-    config = json.loads(config_data)
-
-    # Remove the file extension from position name in order to get position prefix and its relevant processing directory.
-    file_type = config['file_type']
-    position_prefix = position_name.replace(".{}".format(file_type), "")
-    position_directory = os.path.join(processing_directory, position_prefix)
     # stating the name/location of the csv file to be generated
     order_list_path = f"{position_prefix}_order_list.csv"
     order_list_path = os.path.join(position_directory, order_list_path)
@@ -534,20 +289,9 @@ def tomo_order_list_maker(mdoc_file, processing_directory):
     order_list_df.to_csv(order_list_path, index=False, header=False)
 
 
-def relion_setup(mdoc_file, processing_directory):
-    # extract relevant information from mdoc
-    mdoc_df = readmdoc(mdoc_file)
-    position_name = mdoc_df.loc[1, "ImageFile"]
+def relion_setup(mdoc_file, config):
 
-    # Read the configuration file
-    with open('config_TomoPrep.json', 'r') as f:
-        config_data = f.read()
-    config = json.loads(config_data)
-
-    # Remove the file extension from position name in order to get position prefix and its relevant processing directory.
-    file_type = config['file_type']
-    position_prefix = position_name.replace(".{}".format(file_type), "")
-    position_directory = os.path.join(processing_directory, position_prefix)
+    position_prefix, position_directory = get_position_name(mdoc_file, config)
 
     # Make the RELION_PROCESSING directory and the position directories within the tomograms folder
     relion_processing_path = os.path.join(processing_directory, "RELION_PROCESSING")
@@ -568,7 +312,6 @@ def relion_setup(mdoc_file, processing_directory):
                 f"{position_prefix} : RELION is waiting for the unaligned stack...",
                 Color.YELLOW)
             message_printed = True
-        time.sleep(2)  # Wait for 10 seconds before checking again
 
     link_path = os.path.join(relion_position_directory, unaligned_stack)
     os.symlink(source_path, link_path)
@@ -587,7 +330,7 @@ def relion_setup(mdoc_file, processing_directory):
                 f"{position_prefix} : RELION is waiting for CTF files...",
                 Color.YELLOW)
             message_printed = True
-        time.sleep(2)  # Wait for 10 seconds before checking again
+
 
     link_path = os.path.join(relion_position_directory, ctf_list)
     os.symlink(source_path, link_path)
@@ -605,9 +348,9 @@ def relion_setup(mdoc_file, processing_directory):
     xtilt_file = f"{source_imod_directory}/{position_prefix}.xtilt"
     source_path = source_imod_directory
     message_printed = False
-    while not os.path.exists(source_path) and os.path.exists(tiltcom_file) and os.path.exists(
-        tlt_file) and os.path.exists(newstcom_file) and os.path.exists(xtilt_file) and os.path.exists(
-        xf_file) and os.path.exists(st_file):
+    while not os.path.exists(source_path) or not os.path.exists(tiltcom_file) or not os.path.exists(
+        tlt_file) or not os.path.exists(newstcom_file) or not os.path.exists(xtilt_file) or not os.path.exists(
+        xf_file) or not os.path.exists(st_file):
         if not message_printed:
             print_colored(
                 f"{position_prefix} : RELION is waiting for IMOD files from AreTomo...",
@@ -634,52 +377,15 @@ def relion_setup(mdoc_file, processing_directory):
                 f"{position_prefix} : RELION is waiting for the Tomo Order List...",
                 Color.YELLOW)
             message_printed = True
-        time.sleep(2)  # Wait for 10 seconds before checking again
 
     os.symlink(source_path, link_path)
     print_colored(f'{position_prefix} : {order_list} has been soft linked to the RELION processing directory.',
                   Color.GREEN)
 
-    # remove the extra line at the bottom of the .tlt file generated by AreTomo (ugh!)
-    # dan says that the xf file also has a blank line - maybe worth looking at
     tlt_file_path = os.path.join(relion_position_directory, f"{position_prefix}.tlt")
-    # Read the contents of the file
-    with open(tlt_file_path, 'r') as file:
-        lines = file.readlines()
+    tiltcom_file = os.path.join(relion_position_directory, "tilt.com")
 
-    # Remove the trailing whitespace (including the extra blank line) if it exists
-    lines = [line.rstrip() for line in lines]
-
-    # Write the modified content back to the file
-    with open(tlt_file_path, 'w') as file:
-        file.write('\n'.join(lines))
-
-    # modify the EXCLUDE list in the tilt.com file to match the RELION naming scheme.
-
-    def increment_number(number):
-        return str(int(number) + 1)
-
-    def process_numbers(match):
-        numbers = match.group(1).replace(',', ' ').split()
-        incremented_numbers = ','.join(increment_number(num) for num in numbers)
-        return f'EXCLUDELIST {incremented_numbers}'
-
-    imod_directory = f"{processing_directory}/{position_prefix}/{position_prefix}_Imod"
-    tilt_file = f"{imod_directory}/tilt.com"
-    modified_tilt_file = f"{relion_position_directory}/tilt.com"
-
-    with open(tilt_file, 'r') as file:
-        content = file.read()
-
-    pattern = r'EXCLUDELIST\s+(.*?)$'
-    content = re.sub(pattern, process_numbers, content, flags=re.MULTILINE)
-
-    # remove existing tilt file
-    if os.path.exists(modified_tilt_file):
-        os.remove(modified_tilt_file)
-
-    with open(modified_tilt_file, 'w') as file:
-        file.write(content)
+    modify_tltfile(tlt_file_path, tiltcom_file)
 
 
 class RelionStarFile:
@@ -829,7 +535,7 @@ def relion_tomo_reconstruct(mdoc_file):
                     f"{position_prefix} : Waiting for import to finish...",
                     Color.YELLOW)
                 message_printed = True
-            time.sleep(10)  # Wait for 10 seconds before checking again
+
 
         print(f"{position_prefix} : Import finished. Requesting tomogram reconstruction in RELION")
 
@@ -874,20 +580,16 @@ def process_mdoc_file(mdoc_file):
 
         if file_sorting == "YES":
             # Call functions with error handling
-            result = file_sorter(mdoc_absolute_path, processing_directory, mdoc_directory)
-            if result is None:
-                print("Error occurred during file sorting.")
-            result = rawtlt_maker(mdoc_absolute_path)
-            if result is None:
-                print("Error occurred during rawtlt_maker processing.")
-            newstacker(mdoc_absolute_path, processing_directory)
-            tomo_order_list_maker(mdoc_absolute_path, processing_directory)
+            file_sorter(mdoc_absolute_path, config)
+            rawtlt_maker(mdoc_absolute_path, config)
+            newstacker(mdoc_absolute_path, config)
+            tomo_order_list_maker(mdoc_absolute_path, config)
         if motion_correction == "YES":
-            motioncorr(mdoc_absolute_path, processing_directory)
+            motioncorr(mdoc_absolute_path, config)
         if aretomo_alignment == "YES":
-            aretomo(mdoc_absolute_path, processing_directory)
+            aretomo(mdoc_absolute_path, config)
         if ctf_estimation == "YES":
-            ctffind(mdoc_absolute_path, processing_directory)
+            ctffind(mdoc_absolute_path, config)
     except Exception as e:
         print(f"An error occurred during processing: {e}")
 
@@ -924,7 +626,7 @@ if __name__ == '__main__':
     if relion_tomo_import == "YES":
         for mdoc_file in mdoc_files:
             mdoc_absolute_path = os.path.join(mdoc_directory, mdoc_file)
-            relion_setup(mdoc_absolute_path, processing_directory)
+            relion_setup(mdoc_absolute_path, config)
             relion_import_star_maker(mdoc_absolute_path, processing_directory)
         relion_import()
 
