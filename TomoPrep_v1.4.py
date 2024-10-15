@@ -417,24 +417,17 @@ _rlnTomoImportCulledFile
                 f"{tomo_name}   {tilt_series_path}   {ctf_file_path}   {relion_imod_directory}   {fractional_dose}   {order_list_path}   {import_tomo_culled_file}\n")
 
 
-def relion_import_star_maker(mdoc_file, processing_directory):
+def relion_import_star_maker(mdoc_file, config):
     # extract relevant information from mdoc
-    mdoc_df = readmdoc(mdoc_file)
-    position_name = mdoc_df.loc[1, "ImageFile"]
-    number_of_frames = mdoc_df.loc[1, "NumSubFrames"]
 
-    # Read the configuration file
-    with open('config_TomoPrep.json', 'r') as f:
-        config_data = f.read()
-    config = json.loads(config_data)
+    mdoc_df = readmdoc(mdoc_file)
+    number_of_frames = mdoc_df.loc[1, "NumSubFrames"]
+    position_prefix, position_directory = get_position_name(mdoc_file, config)
 
     # Remove the file extension from position name in order to get position prefix and its relevant processing directory.
-    file_type = config['file_type']
-    position_prefix = position_name.replace(".{}".format(file_type), "")
     dose_per_frame = config['frame_dose']
     relion_processing_path = os.path.join(processing_directory, "RELION_PROCESSING")
 
-    tomo_name = position_prefix
     tilt_series_path = f"tomograms/{position_prefix}/{position_prefix}.st"
     ctf_file_path = f"tomograms/{position_prefix}/{position_prefix}.txt"
     relion_imod_directory = f"tomograms/{position_prefix}"
@@ -450,20 +443,13 @@ def relion_import_star_maker(mdoc_file, processing_directory):
         relion_star_file.write_header()
 
     # Call the write_line method for each entry
-    relion_star_file.write_line(tomo_name, tilt_series_path, ctf_file_path, relion_imod_directory, fractional_dose,
+    relion_star_file.write_line(position_prefix, tilt_series_path, ctf_file_path, relion_imod_directory, fractional_dose,
                                 order_list_path, import_tomo_culled_file)
 
 
-def relion_import():
-    # Read the configuration file
-    with open('config_TomoPrep.json', 'r') as f:
-        config_data = f.read()
+def relion_import(config):
 
-    # Parse the contents of the JSON file
-    config = json.loads(config_data)
-
-    # Extract the parameters required for the motion correction and newstack.
-
+    position_prefix, position_directory = get_position_name(mdoc_file, config)
     relion_module = config['relion_module']
     processing_directory = config['processing_directory']
     RELION_IMPORT_TEMPLATE = config['IMPORT_SLURM_TEMPLATE']
@@ -472,37 +458,28 @@ def relion_import():
     Cs = config['Cs']
     Q0 = config['Q0']
     voltage = config['voltage']
-
     relion_directory = f"{processing_directory}/RELION_PROCESSING"
+
     # Read the template file
     with open(RELION_IMPORT_TEMPLATE, "r") as f:
         slurm_template = f.read()
         slurm_script = slurm_template.format(relion_module=relion_module, partition=partition,
                                              relion_directory=relion_directory, pixel_size=pixel_size,
                                              voltage=voltage, Cs=Cs, Q0=Q0)
+
         slurm_script_path = "relion_import.sh"
         slurm_script_path = os.path.join(relion_directory, slurm_script_path)
         # Write the modified SLURM script to a new file
         with open(slurm_script_path, "w") as f:
             f.write(slurm_script)
-        print_colored("RELION Import Job Submitted", Color.RED)
-        subprocess.run(['sbatch', slurm_script_path])
+
+        job_name = "RELION Import"
+        queue_submit(position_prefix, job_name, slurm_script_path, config)
 
 
-def relion_tomo_reconstruct(mdoc_file):
-    # extract relevant information from mdoc
-    mdoc_df = readmdoc(mdoc_file)
-    position_name = mdoc_df.loc[1, "ImageFile"]
+def relion_tomo_reconstruct(mdoc_file, config):
 
-    # Read the configuration file
-    with open('config_TomoPrep.json', 'r') as f:
-        config_data = f.read()
-    config = json.loads(config_data)
-
-    # Remove the file extension from position name in order to get position prefix and its relevant processing directory.
-    file_type = config['file_type']
-    position_prefix = position_name.replace(".{}".format(file_type), "")
-    position_directory = os.path.join(processing_directory, position_prefix)
+    position_prefix, position_directory = get_position_name(mdoc_file, config)
 
     # extract the remaining relevant parameters required for the Ctffind job.
     TOMO_RECONSTRUCT_SLURM_TEMPLATE = config['TOMO_RECONSTRUCT_SLURM_TEMPLATE']
@@ -523,6 +500,7 @@ def relion_tomo_reconstruct(mdoc_file):
                                              relion_directory=relion_directory, position_prefix=position_prefix)
         slurm_script_path = f"relion_tomo_reconstruct_{position_prefix}.sh"
         slurm_script_path = os.path.join(position_directory, slurm_script_path)
+
         # Write the modified SLURM script to a new file
         with open(slurm_script_path, "w") as f:
             f.write(slurm_script)
@@ -536,30 +514,10 @@ def relion_tomo_reconstruct(mdoc_file):
                     f"{position_prefix} : Waiting for import to finish...",
                     Color.YELLOW)
                 message_printed = True
-
-
         print(f"{position_prefix} : Import finished. Requesting tomogram reconstruction in RELION")
 
-        message_printed = False
-        while True:
-            # Run the squeue command to get the job count for the current user
-            squeue_command = "squeue -u $(whoami) | wc -l"
-            job_count = int(subprocess.check_output(squeue_command, shell=True).decode().strip())
-
-            if job_count >= max_jobs:
-                if not message_printed:
-                    print_colored(
-                        f"{position_prefix} : Maximum number of SLURM jobs running ({job_count}). Waiting for the queue to go down...",
-                        Color.YELLOW)
-                    message_printed = True
-                sleep_time = random.randint(1, 10)
-                time.sleep(sleep_time)
-            else:
-                # Submit a new job using sbatch
-                subprocess.run(['sbatch', slurm_script_path])
-                print_colored(f"{position_prefix} : RELION reconstruct tomogram job submitted.",
-                              Color.RED)
-                break  # Exit the loop after submitting a job
+        job_name = "Relion Tomo Reconstruct"
+        queue_submit(position_prefix, job_name, slurm_script_path, config)
 
 
 def process_mdoc_file(mdoc_file):
@@ -628,12 +586,12 @@ if __name__ == '__main__':
         for mdoc_file in mdoc_files:
             mdoc_absolute_path = os.path.join(mdoc_directory, mdoc_file)
             relion_setup(mdoc_absolute_path, config)
-            relion_import_star_maker(mdoc_absolute_path, processing_directory)
-        relion_import()
+            relion_import_star_maker(mdoc_absolute_path, config)
+        relion_import(config)
 
     if relion_tomogram_reconstruction == "YES":
         for mdoc_file in mdoc_files:
             mdoc_absolute_path = os.path.join(mdoc_directory, mdoc_file)
-            relion_tomo_reconstruct(mdoc_absolute_path)
+            relion_tomo_reconstruct(mdoc_absolute_path, config)
 
     print("All jobs submitted. Check for their completion!")
