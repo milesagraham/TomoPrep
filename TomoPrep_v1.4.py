@@ -347,6 +347,7 @@ def relion_setup(mdoc_file, config):
     xf_file = f"{source_imod_directory}/{position_prefix}.xf"
     xtilt_file = f"{source_imod_directory}/{position_prefix}.xtilt"
     source_path = source_imod_directory
+
     message_printed = False
     while not os.path.exists(source_path) or not os.path.exists(tiltcom_file) or not os.path.exists(
         tlt_file) or not os.path.exists(newstcom_file) or not os.path.exists(xtilt_file) or not os.path.exists(
